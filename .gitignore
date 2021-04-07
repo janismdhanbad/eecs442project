@@ -1,16 +1,16 @@
 
 
 .DS_Store
-build
+PyTorch-YOLOv3/build
 .git
 *.egg-info
-dist
-output
-data/*
-backup
-weights/*.weights
+PyTorch-YOLOv3/dist
+PyTorch-YOLOv3/output
+PyTorch-YOLOv3/data/*
+PyTorch-YOLOv3/backup
+PyTorch-YOLOv3/weights/*.weights
 __pycache__
-checkpoints
+PyTorch-YOLOv3/checkpoints
 
-.vscode/
-logs/
+PyTorch-YOLOv3/.vscode/
+PyTorch-YOLOv3/logs/
