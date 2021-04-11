@@ -9,6 +9,7 @@ PyTorch-YOLOv3/output
 PyTorch-YOLOv3/data/*
 PyTorch-YOLOv3/backup
 PyTorch-YOLOv3/weights/*.weights
+PyTorch-YOLOv3/weights/darknet53.conv.74
 __pycache__
 PyTorch-YOLOv3/checkpoints
 
