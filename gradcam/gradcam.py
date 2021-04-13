@@ -174,7 +174,7 @@ if __name__ == '__main__':
 
     original_image, prep_img = params_for_yolo(image_dir)
 
-    model = Darknet("cfg/config/yolov3.cfg", 416)
+    model = Darknet("config/yolov3.cfg", 416)
     model.load_state_dict(torch.load("weights/yoloweights.pt", map_location = "cuda:0")["model"])
 
     prep_img = torch.from_numpy(prep_img).to("cuda:0")
