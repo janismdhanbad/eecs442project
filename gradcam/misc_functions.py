@@ -206,7 +206,7 @@ def get_positive_negative_saliency(gradient):
 
 def params_for_yolo(image_dir):
     """
-    similar to `get_example_params()`
+    similar to `get_example_params()
     """
     target_class = 1
     file_name_to_export = "laptop" # this is the class name you're predicting
