@@ -8,7 +8,7 @@ from torch.autograd import Variable
 import numpy as np
 
 from utils.parse_config import *
-from utils.utils import to_cpu, non_max_suppression
+from utils.utils import to_cpu, non_max_suppression, weights_init_normal
 
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
@@ -91,10 +91,8 @@ def create_modules(module_defs):
             anchors = [(anchors[i], anchors[i + 1]) for i in range(0, len(anchors), 2)]
             anchors = [anchors[i] for i in anchor_idxs]
             num_classes = int(module_def["classes"])
-            img_size = int(hyperparams["height"])
-            ignore_thres = float(module_def["ignore_thresh"])
             # Define detection layer
-            yolo_layer = YOLOLayer(anchors, num_classes, img_size, ignore_thres)
+            yolo_layer = YOLOLayer(anchors, num_classes)
             modules.add_module(f"yolo_{module_i}", yolo_layer)
         # Register module list and number of output filters
         module_list.append(modules)
@@ -118,11 +116,10 @@ class Upsample(nn.Module):
 class YOLOLayer(nn.Module):
     """Detection layer"""
 
-    def __init__(self, anchors, num_classes, img_size, ignore_thres):
+    def __init__(self, anchors, num_classes):
         super(YOLOLayer, self).__init__()
         self.num_anchors = len(anchors)
         self.num_classes = num_classes
-        self.ignore_thres = 0.5
         self.mse_loss = nn.MSELoss()
         self.bce_loss = nn.BCELoss()
         self.no = num_classes + 5  # number of outputs per anchor
@@ -131,11 +128,10 @@ class YOLOLayer(nn.Module):
         anchors = torch.tensor(list(chain(*anchors))).float().view(-1, 2)
         self.register_buffer('anchors', anchors)
         self.register_buffer('anchor_grid', anchors.clone().view(1, -1, 1, 1, 2))
-        self.img_size = img_size
         self.stride = None
 
-    def forward(self, x):
-        stride = self.img_size // x.size(2)
+    def forward(self, x, img_size):
+        stride = img_size // x.size(2)
         self.stride = stride
         bs, _, ny, nx = x.shape  # x(bs,255,20,20) to x(bs,3,20,20,85)
         x = x.view(bs, self.num_anchors, self.no, ny, nx).permute(0, 1, 3, 4, 2).contiguous()
@@ -160,16 +156,16 @@ class YOLOLayer(nn.Module):
 class Darknet(nn.Module):
     """YOLOv3 object detection model"""
 
-    def __init__(self, config_path, img_size=416):
+    def __init__(self, config_path):
         super(Darknet, self).__init__()
         self.module_defs = parse_model_config(config_path)
         self.hyperparams, self.module_list = create_modules(self.module_defs)
         self.yolo_layers = [layer[0] for layer in self.module_list if isinstance(layer[0], YOLOLayer)]
-        self.img_size = img_size
         self.seen = 0
         self.header_info = np.array([0, 0, 0, self.seen, 0], dtype=np.int32)
 
     def forward(self, x):
+        img_size = x.size(2)
         layer_outputs, yolo_outputs = [], []
         for i, (module_def, module) in enumerate(zip(self.module_defs, self.module_list)):
             if module_def["type"] in ["convolutional", "upsample", "maxpool"]:
@@ -180,7 +176,7 @@ class Darknet(nn.Module):
                 layer_i = int(module_def["from"])
                 x = layer_outputs[-1] + layer_outputs[layer_i]
             elif module_def["type"] == "yolo":
-                x = module[0](x)
+                x = module[0](x, img_size)
                 yolo_outputs.append(x)
             layer_outputs.append(x)
         return yolo_outputs if self.training else torch.cat(yolo_outputs, 1)
@@ -265,3 +261,28 @@ class Darknet(nn.Module):
                 conv_layer.weight.data.cpu().numpy().tofile(fp)
 
         fp.close()
+
+def load_model(model_path, weights_path=None):
+    """Loads the yolo model from file.
+
+    :param model_path: Path to model definition file (.cfg)
+    :type model_path: str
+    :param weights_path: Path to weights or checkpoint file (.weights or .pth)
+    :type weights_path: str
+    :return: Returns model
+    :rtype: Darknet
+    """
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")  # Select device for inference
+    model = Darknet(model_path).to(device)
+
+    model.apply(weights_init_normal)
+
+    # If pretrained weights are specified, start from checkpoint or weight file
+    if weights_path:
+        if weights_path.endswith(".pth"):  
+            # Load checkpoint weights
+            model.load_state_dict(torch.load(weights_path))
+        else:  
+            # Load darknet weights
+            model.load_darknet_weights(weights_path)
+    return model
