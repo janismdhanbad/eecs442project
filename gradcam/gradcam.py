@@ -166,7 +166,7 @@ class GradCam():
 
 if __name__ == '__main__':
 
-    # image_dir = "data/samples"
+    image_dir = "data/samples"
 
     target_class = 1 
     
