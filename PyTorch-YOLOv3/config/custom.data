@@ -1,4 +1,4 @@
-classes= 1
-train=data/custom/train.txt
-valid=data/custom/valid.txt
-names=data/custom/classes.names
+classes= 15
+train=data/traffic_sign_data/train_lisa.txt
+valid=data/traffic_sign_data/valid_lisa.txt
+names=data/traffic_sign_data/classes.names
