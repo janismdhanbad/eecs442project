@@ -121,26 +121,102 @@ if __name__ == "__main__":
     # Create optimizer
     # ################
     
-    params = [p for p in model.parameters() if p.requires_grad]
+    # params = [p for p in model.parameters() if p.requires_grad]
 
-    if (model.hyperparams['optimizer'] in [None, "adam"]):
-        optimizer = torch.optim.Adam(
-            params, 
-            lr=model.hyperparams['learning_rate'],
-            weight_decay=model.hyperparams['decay'],
-            )
-    elif (model.hyperparams['optimizer'] == "sgd"):
-        optimizer = torch.optim.SGD(
-            params, 
-            lr=model.hyperparams['learning_rate'],
-            weight_decay=model.hyperparams['decay'],
-            momentum=model.hyperparams['momentum'])
-    else:
-        print("Unknown optimizer. Please choose between (adam, sgd).")
+    # if (model.hyperparams['optimizer'] in [None, "adam"]):
+    #     optimizer = torch.optim.Adam(
+    #         params, 
+    #         lr=model.hyperparams['learning_rate'],
+    #         weight_decay=model.hyperparams['decay'],
+    #         )
+    # elif (model.hyperparams['optimizer'] == "sgd"):
+    #     optimizer = torch.optim.SGD(
+    #         params, 
+    #         lr=model.hyperparams['learning_rate'],
+    #         weight_decay=model.hyperparams['decay'],
+    #         momentum=model.hyperparams['momentum'])
+    # else:
+    #     print("Unknown optimizer. Please choose between (adam, sgd).")
 
     for epoch in range(args.epochs):
         
         print("\n---- Training Model ----")
+        if epoch < 2:
+            layers_to_train = ['module_list.99.conv_99.weight'
+            ,'module_list.100.conv_100.weight', 'module_list.96.conv_96.weight'
+            , 'module_list.101.conv_101.weight', 'module_list.102.conv_102.weight'  
+            , 'module_list.103.conv_103.weight', 'module_list.104.conv_104.weight' 
+            , 'module_list.105.conv_105.weight']
+
+            for n, p in model.named_parameters():
+                if n in layers_to_train:
+                    # import pdb; pdb.set_trace()
+                    pass
+                    # print("True")
+                else:
+                    p.requires_grad = False
+                    # print("False")
+
+            pg0, pg1, pg2 = [], [], []  # optimizer parameter groups
+            for k, v in model.named_modules():
+                if hasattr(v, 'bias') and isinstance(v.bias, nn.Parameter):
+                    pg2.append(v.bias)  # biases
+                if isinstance(v, nn.BatchNorm2d):
+                    pg0.append(v.weight)  # no decay
+                elif hasattr(v, 'weight') and isinstance(v.weight, nn.Parameter):
+                    pg1.append(v.weight)  # apply decay
+
+            if (model.hyperparams['optimizer'] in [None, "adam"]):
+                optimizer = optim.Adam(pg0, model.hyperparams['learning_rate'])  # adjust beta1 to momentum
+            else:
+                optimizer = optim.SGD(pg0, lr=model.hyperparams['decay'], momentum=model.hyperparams['momentum'], nesterov=True)
+
+            optimizer.add_param_group({'params': pg1, 'weight_decay': model.hyperparams['learning_rate']})  # add pg1 with weight_decay
+            optimizer.add_param_group({'params': pg2})  # add pg2 (biases)
+            del pg0, pg1, pg2
+            
+            # params = [p for p in model.parameters() if p.requires_grad]
+            
+            # import pdb; pdb.set_trace()
+
+            # if (model.hyperparams['optimizer'] in [None, "adam"]):
+            #     optimizer = torch.optim.Adam(
+            #         params, 
+            #         lr=model.hyperparams['learning_rate'],
+            #         weight_decay=model.hyperparams['decay'],
+            #         )
+            # elif (model.hyperparams['optimizer'] == "sgd"):
+            #     optimizer = torch.optim.SGD(
+            #         params, 
+            #         lr=model.hyperparams['learning_rate'],
+            #         weight_decay=model.hyperparams['decay'],
+            #         momentum=model.hyperparams['momentum'])
+            # else:
+            #     print("Unknown optimizer. Please choose between (adam, sgd).")          
+
+        else:
+            for n, p in model.named_parameters():
+                p.requires_grad = True 
+            params = [p for p in model.parameters() if p.requires_grad]
+
+            if (model.hyperparams['optimizer'] in [None, "adam"]):
+                optimizer = torch.optim.Adam(
+                    params, 
+                    lr=model.hyperparams['learning_rate']*0.1,
+                    weight_decay=model.hyperparams['decay'],
+                    )
+            elif (model.hyperparams['optimizer'] == "sgd"):
+                optimizer = torch.optim.SGD(
+                    params, 
+                    lr=model.hyperparams['learning_rate']*0.1,
+                    weight_decay=model.hyperparams['decay'],
+                    momentum=model.hyperparams['momentum'])
+            else:
+                print("Unknown optimizer. Please choose between (adam, sgd).")            
+
+                
+
+
 
         model.train()  # Set model to training mode
         
@@ -214,10 +290,10 @@ if __name__ == "__main__":
         # #############
 
         # Save model to checkpoint file
-        if epoch % args.checkpoint_interval == 0:
-            checkpoint_path = f"checkpoints/yolov3_ckpt_{epoch}.pth"
-            print(f"---- Saving checkpoint to: '{checkpoint_path}' ----")
-            torch.save(model.state_dict(), checkpoint_path)
+        # if epoch % args.checkpoint_interval == 0:
+            # checkpoint_path = f"checkpoints/yolov3_ckpt_{epoch}.pth"
+            # print(f"---- Saving checkpoint to: '{checkpoint_path}' ----")
+            # torch.save(model.state_dict(), checkpoint_path)
 
         # ########
         # Evaluate
@@ -236,7 +312,7 @@ if __name__ == "__main__":
                 nms_thres=args.nms_thres,
                 verbose=args.verbose
             )
-
+            prev_ap_mean = 0
             if metrics_output is not None:
                 precision, recall, AP, f1, ap_class = metrics_output
                 evaluation_metrics = [
@@ -244,4 +320,11 @@ if __name__ == "__main__":
                     ("validation/recall", recall.mean()),
                     ("validation/mAP", AP.mean()),
                     ("validation/f1", f1.mean())]
+                curr_ap_mean = AP.mean()
+                if curr_ap_mean > prev_ap_mean:
+                    checkpoint_path = f"checkpoints/yolov3_ckpt.pth"
+                    print(f"---- Saving checkpoint to: '{checkpoint_path}' ----")
+                    torch.save(model.state_dict(), checkpoint_path)        
+                    prev_ap_mean = curr_ap_mean            
+
                 logger.list_of_scalars_summary(evaluation_metrics, epoch)
