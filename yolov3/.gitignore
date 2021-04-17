@@ -1,21 +1,3 @@
-
-
-.DS_Store
-PyTorch-YOLOv3/build
-.git
-*.egg-info
-PyTorch-YOLOv3/dist
-PyTorch-YOLOv3/output
-PyTorch-YOLOv3/data/*
-PyTorch-YOLOv3/backup
-PyTorch-YOLOv3/weights/*.weights
-PyTorch-YOLOv3/weights/darknet53.conv.74
-__pycache__
-PyTorch-YOLOv3/checkpoints
-
-PyTorch-YOLOv3/.vscode/
-PyTorch-YOLOv3/logs/
-
 # Repo-specific GitIgnore ----------------------------------------------------------------------------------------------
 *.jpg
 *.jpeg

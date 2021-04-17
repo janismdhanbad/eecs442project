@@ -6,8 +6,6 @@ from matplotlib.lines import Line2D
 import matplotlib
 from PIL import Image
 
-f
-
 from models import *
 from misc_functions import *
 
@@ -79,7 +77,7 @@ class CamExtractor():
             if mtype in ["convolutional", "upsample", "maxpool"]:
                     x = module(x)
             elif mtype == "route":
-                layers = [int(x) for x in mdef["layers"].split(",")]
+                layers = [int(x) for x in mdef["layers"]]
                 if len(layers) == 1:
                     x = layer_outputs[layers[0]]
                 else:
@@ -89,11 +87,12 @@ class CamExtractor():
                         layer_outputs[layers[1]] = F.interpolate(layer_outputs[layers[1]], scale_factor=[0.5, 0.5])
                         x = torch.cat([layer_outputs[i] for i in layers], 1)
             elif mtype == "shortcut":
-                x = x + layer_outputs[int(mdef["from"])]
+                    x = x + layer_outputs[int(mdef["from"][0])]
             elif mtype == "yolo":
                 x = module(x, (416, 416))
                 output.append(x)
-            layer_outputs.append(x if i in self.model.routs else [])
+            # import pdb; pdb.set_trace()
+            layer_outputs.append(x)
 
             if i == self.target_layer:
                 x.register_hook(self.save_gradient)
@@ -166,25 +165,27 @@ class GradCam():
 
 if __name__ == '__main__':
 
-    image_dir = "data/samples"
+    image_dir = "sample_files/"
 
-    target_class = 1 
+    target_class = 15
     
-    file_name_to_export = "laptop" # class name you are predicting
+    file_name_to_export = "cat" # class name you are predicting
 
-    original_image, prep_img = params_for_yolo(image_dir)
-
-    model = Darknet("config/yolov3.cfg", 416)
-    model.load_state_dict(torch.load("weights/yoloweights.pt", map_location = "cuda:0")["model"])
-
+    original_image, prep_img = params_for_yolo(image_dir, target_class, file_name_to_export)
+    # /home/datumx/data_science_experiments/traffic_sign_recogntiton/new_proj/eecs442project/PyTorch-YOLOv3/config/yolov3-custom.cfg
+    # /home/datumx/data_science_experiments/traffic_sign_recogntiton/new_proj/eecs442project/PyTorch-YOLOv3/checkpoints/yolov3_ckpt.pth
+    model = Darknet("/home/datumx/data_science_experiments/traffic_sign_recogntiton/new_proj/yolov3/cfg/yolov3-spp.cfg", 416)
+    model.load_state_dict(torch.load("/home/datumx/data_science_experiments/traffic_sign_recogntiton/new_proj/yolov3/weights/yolov3-spp-ultralytics.pt", map_location = "cuda:0")["model"])
+    import pdb; pdb.set_trace()
     prep_img = torch.from_numpy(prep_img).to("cuda:0")
 
     if prep_img.ndimension() == 3:
         prep_img = prep_img.unsqueeze(0)
 
-    grad_cam = GradCam(model, target_layer = 42)
+    grad_cam = GradCam(model, target_layer = 90)
     cam = grad_cam.generate_cam(prep_img, target_class)
     original_image = Image.fromarray(original_image.astype("uint8"))
+    # import pdb; pdb.set_trace()
     save_class_activation_images(original_image, cam, file_name_to_export)
 
     print("GradCAM completed")
