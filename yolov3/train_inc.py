@@ -21,7 +21,10 @@ wdir = 'weights' + os.sep  # weights dir
 last = wdir + 'last.pt'
 best = wdir + 'best.pt'
 results_file = 'results.txt'
-
+import os
+# os.remove("")
+# os.remove("")
+# os.remove("")
 # Hyperparameters
 hyp = {'giou': 3.54,  # giou loss gain
        'cls': 37.4,  # cls loss gain
@@ -79,7 +82,8 @@ def train(hyp):
     init_seeds()
     data_dict = parse_data_cfg(data)
     train_path = data_dict['train']
-    test_path = data_dict['valid']
+    test_path1 = data_dict['valid1']
+    test_path2 = data_dict['valid2']
     nc = 1 if opt.single_cls else int(data_dict['classes'])  # number of classes
     hyp['cls'] *= nc / 80  # update coco-tuned hyp['cls'] to current dataset
 
@@ -130,7 +134,7 @@ def train(hyp):
         # load optimizer
         if ckpt['optimizer'] is not None:
             optimizer.load_state_dict(ckpt['optimizer'])
-            best_fitness = ckpt['best_fitness']
+            best_fitness = 0 #ckpt['best_fitness']
 
         # load results
         if ckpt.get('training_results') is not None:
@@ -138,7 +142,7 @@ def train(hyp):
                 file.write(ckpt['training_results'])  # write results.txt
 
         # epochs
-        start_epoch = ckpt['epoch'] + 1
+        start_epoch =  0 + 1 #ckpt['epoch']
         if epochs < start_epoch:
             print('%s has been trained for %g epochs. Fine-tuning for %g additional epochs.' %
                   (opt.weights, ckpt['epoch'], epochs))
@@ -151,10 +155,14 @@ def train(hyp):
         load_darknet_weights(model, weights)
 
     if opt.freeze_layers:
+        # import pdb; pdb.set_trace()
         output_layer_indices = [idx - 1 for idx, module in enumerate(model.module_list) if isinstance(module, YOLOLayer)]
         freeze_layer_indices = [x for x in range(len(model.module_list)) if
                                 (x not in output_layer_indices) and
                                 (x - 1 not in output_layer_indices)]
+        last_three_layers = [85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104]
+        freeze_layer_indices = [f for f in freeze_layer_indices if f not in last_three_layers]
+        # import pdb; pdb.set_trace()
         for idx in freeze_layer_indices:
             for parameter in model.module_list[idx].parameters():
                 parameter.requires_grad_(False)
@@ -208,7 +216,17 @@ def train(hyp):
                                              collate_fn=dataset.collate_fn)
 
     # Testloader
-    testloader = torch.utils.data.DataLoader(LoadImagesAndLabels(test_path, imgsz_test, batch_size,
+    testloaderlisa = torch.utils.data.DataLoader(LoadImagesAndLabels(test_path1, imgsz_test, batch_size,
+                                                                 hyp=hyp,
+                                                                 rect=True,
+                                                                 cache_images=opt.cache_images,
+                                                                 single_cls=opt.single_cls),
+                                             batch_size=batch_size,
+                                             num_workers=nw,
+                                             pin_memory=True,
+                                             collate_fn=dataset.collate_fn)
+    
+    testloaderrtsd = torch.utils.data.DataLoader(LoadImagesAndLabels(test_path2, imgsz_test, batch_size,
                                                                  hyp=hyp,
                                                                  rect=True,
                                                                  cache_images=opt.cache_images,
@@ -322,32 +340,52 @@ def train(hyp):
         final_epoch = epoch + 1 == epochs
         if not opt.notest or final_epoch:  # Calculate mAP
             is_coco = any([x in data for x in ['coco.data', 'coco2014.data', 'coco2017.data']]) and model.nc == 80
-            results, maps = test.test(cfg,
+            
+            results_lisa, maps_lisa = test.test(cfg,
                                       data,
                                       batch_size=batch_size,
                                       imgsz=imgsz_test,
                                       model=ema.ema,
                                       save_json=final_epoch and is_coco,
                                       single_cls=opt.single_cls,
-                                      dataloader=testloader,
+                                      dataloader=testloaderlisa,
                                       multi_label=ni > n_burn)
+            results_rtsd, maps_rtsd = test.test(cfg,
+                                      data,
+                                      batch_size=batch_size,
+                                      imgsz=imgsz_test,
+                                      model=ema.ema,
+                                      save_json=final_epoch and is_coco,
+                                      single_cls=opt.single_cls,
+                                      dataloader=testloaderrtsd,
+                                      multi_label=ni > n_burn)                                      
 
         # Write
         with open(results_file, 'a') as f:
-            f.write(s + '%10.3g' * 7 % results + '\n')  # P, R, mAP, F1, test_losses=(GIoU, obj, cls)
+            f.write("lisa res "+ s + '%10.3g' * 7 % results_lisa + '\n')  # P, R, mAP, F1, test_losses=(GIoU, obj, cls)
         if len(opt.name) and opt.bucket:
             os.system('gsutil cp results.txt gs://%s/results/results%s.txt' % (opt.bucket, opt.name))
 
+        with open(results_file, 'a') as f:
+            f.write("rtsd res " +s + '%10.3g' * 7 % results_rtsd + '\n')  # P, R, mAP, F1, test_losses=(GIoU, obj, cls)
+        if len(opt.name) and opt.bucket:
+            os.system('gsutil cp results.txt gs://%s/results/results%s.txt' % (opt.bucket, opt.name))            
+
+
+        results = results_lisa + results_rtsd
+        # import pdb; pdb.set_trace()
         # Tensorboard
         if tb_writer:
             tags = ['train/giou_loss', 'train/obj_loss', 'train/cls_loss',
-                    'metrics/precision', 'metrics/recall', 'metrics/mAP_0.5', 'metrics/F1',
-                    'val/giou_loss', 'val/obj_loss', 'val/cls_loss']
+                    'metrics_lisa/precision', 'metrics_lisa/recall', 'metrics_lisa/mAP_0.5', 'metrics_lisa/F1',
+                    'val_lisa/giou_loss', 'val_lisa/obj_loss', 'val_lisa/cls_loss', 'metrics_rtsd/precision', 
+                    'metrics_rtsd/recall', 'metrics_rtsd/mAP_0.5', 'metrics_rtsd/F1',
+                    'val_rtsd/giou_loss', 'val_rtsd/obj_loss', 'val_rtsd/cls_loss']
             for x, tag in zip(list(mloss[:-1]) + list(results), tags):
                 tb_writer.add_scalar(tag, x, epoch)
 
         # Update best mAP
-        fi = fitness(np.array(results).reshape(1, -1))  # fitness_i = weighted combination of [P, R, mAP, F1]
+        fi = fitness(np.array(results_rtsd).reshape(1, -1))  # fitness_i = weighted combination of [P, R, mAP, F1]
         if fi > best_fitness:
             best_fitness = fi
 
@@ -363,6 +401,7 @@ def train(hyp):
 
             # Save last, best and delete
             torch.save(ckpt, last)
+            # import pdb; pdb.set_trace()
             if (best_fitness == fi) and not final_epoch:
                 torch.save(ckpt, best)
             del ckpt
