@@ -11,7 +11,7 @@ from models import *
 from misc_functions import *
 
 
-matplotlib.use("TkAgg")
+matplotlib.use("agg")
 
 def plot_grad_flow(named_params):
     ave_grads = []
@@ -23,12 +23,12 @@ def plot_grad_flow(named_params):
                 ave_grads.append(p.grad.abs().mean())
     plt.plot(ave_grads, alpha=0.3, color="b")
     plt.hlines(0, 0, len(ave_grads) + 1, linewidth = 1, color="k")
-    plt.xticks(range(0, len(ave_grads), 1), layers, rotation="vertical")
-    plt.xlim(xmin = 0, xmax = len(ave_grads))
-    plt.xlabel("Layers")
-    plt.ylabel("avg gradient")
-    plt.title("grad flow")
-    plt.grid(True)
+    #plt.xticks(range(0, len(ave_grads), 1), layers, rotation="vertical")
+    #plt.xlim(xmin = 0, xmax = len(ave_grads))
+    #plt.xlabel("Layers")
+    #plt.ylabel("avg gradient")
+    #plt.title("grad flow")
+    #plt.grid(True)
     plt.show()
 
 def plot_grad_flow_v2(named_params):
@@ -45,13 +45,13 @@ def plot_grad_flow_v2(named_params):
     plt.bar(np.arange(len(max_grads)), max_grads, alpha = 0.1, lw=1, color="c")
     plt.bar(np.arange(len(max_grads)), ave_grads, alpha=0.1, lw=1, color="b")
     plt.hlines(0, 0, len(ave_grads) + 1, lw=2, color="k")
-    plt.xticks(range(0, len(ave_grads), 1), layers, rotation="vertical")
-    plt.xlim(left=0, right=len(ave_grads))
-    plt.ylim(bottom = -0.001, top = 0.02)
+    #plt.xticks(range(0, len(ave_grads), 1), layers, rotation="vertical")
+    #plt.xlim(left=0, right=len(ave_grads))
+    #plt.ylim(bottom = -0.001, top = 0.02)
     plt.xlabel("layers")
     plt.ylabel("ave grads")
     plt.title("grad flow")
-    plt.grid(True)
+    #plt.grid(True)
     plt.legend([Line2D([0], [0], color="c", lw=4),
                 Line2D([0], [0], color="b", lw=4),
                 Line2D([0], [0], color="k", lw=4)], ["max-gradient", "mean-gradient", "zero-gradient"])
@@ -116,7 +116,7 @@ class GradCam():
     """
     def __init__(self, model, target_layer):
         self.model = model
-        self.model.to("cuda:0").eval()
+        self.model.to("cpu").eval()
 
         # define extractor
         self.extractor = CamExtractor(self.model, target_layer)
@@ -131,7 +131,8 @@ class GradCam():
             target_class = np.argmax(model_output.data.numpy())
 
         # target for backprop
-        one_hot_output = torch.cuda.FloatTensor(1, model_output.size()[-1]).zero_()
+        #one_hot_output = torch.cuda.FloatTensor(1, model_output.size()[-1]).zero_()
+        one_hot_output = torch.FloatTensor(1, model_output.size()[-1]).zero_()
         one_hot_output[0][target_class] = 1
 
         # zero grads
@@ -168,17 +169,18 @@ if __name__ == '__main__':
 
     image_dir = "sample_files/"
 
-    target_class = 15
-    
-    file_name_to_export = "cat" # class name you are predicting
+    target_class = 13
+
+    file_name_to_export = "stop" # class name you are predicting
 
     original_image, prep_img = params_for_yolo(image_dir, target_class, file_name_to_export)
     # /home/datumx/data_science_experiments/traffic_sign_recogntiton/new_proj/eecs442project/PyTorch-YOLOv3/config/yolov3-custom.cfg
     # /home/datumx/data_science_experiments/traffic_sign_recogntiton/new_proj/eecs442project/PyTorch-YOLOv3/checkpoints/yolov3_ckpt.pth
-    model = Darknet("/home/datumx/data_science_experiments/traffic_sign_recogntiton/new_proj/yolov3/cfg/yolov3-spp.cfg", 416)
-    model.load_state_dict(torch.load("/home/datumx/data_science_experiments/traffic_sign_recogntiton/new_proj/yolov3/weights/yolov3-spp-ultralytics.pt", map_location = "cuda:0")["model"])
+    #/Users/nihar/Documents/eecs442/eecs442project
+    model = Darknet("/Users/nihar/Documents/eecs442/eecs442project/gradcam/config/yolov3-custom_final.cfg", 416)
+    model.load_state_dict(torch.load("/Users/nihar/Documents/eecs442/eecs442project/gradcam/rtsd.pt", map_location = torch.device('cpu'))["model"])
     # import pdb; pdb.set_trace()
-    prep_img = torch.from_numpy(prep_img).to("cuda:0")
+    prep_img = torch.from_numpy(prep_img).to("cpu")
 
     if prep_img.ndimension() == 3:
         prep_img = prep_img.unsqueeze(0)
