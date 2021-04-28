@@ -1,6 +1,6 @@
-# eecs442project
+# Domain Adaptation for Object Detection
 
-The repo contains our code our course project on Domain Adaptation for Object Detection.
+The repo contains our code our course(EECS 442) project on Domain Adaptation for Object Detection.
 
 The YOLO model was taken from [here](https://github.com/ultralytics/yolov3) and GradCAM code was taken from [here](https://github.com/pifalken/YOLOv3-GradCAM)
 
