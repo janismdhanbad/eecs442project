@@ -1,4 +1,3 @@
-#python train_inc.py --batch-size 4 --cfg ../PyTorch-YOLOv3/config/yolov3-custom.cfg --data data/custom_rtsd100.data --weights weights/LISA_train/best.pt --freeze-layers
 # python train_inc.py --cfg ../PyTorch-YOLOv3/config/yolov3-custom.cfg --data data/custom_lisa500.data --weights weights/RTSD_train/best.pt --freeze-layers --batch-size 4
 import argparse
 
@@ -21,7 +20,9 @@ except:
 
 wdir = 'weights' + os.sep  # weights dir
 last = wdir + 'last.pt'
-best = wdir + 'best.pt'
+best_rtsd = wdir + 'best_rtsd.pt'
+best_lisa = wdir + 'best_lisa.pt'
+
 results_file = 'results.txt'
 import os
 # os.remove("")
@@ -93,6 +94,25 @@ def train(hyp):
     for f in glob.glob('*_batch*.jpg') + glob.glob(results_file):
         os.remove(f)
 
+    #load fixed model
+    fixed_model = Darknet(cfg).to(device)
+    ckpt_freezed = torch.load(weights, map_location=device)
+    fixed_model.load_state_dict(ckpt_freezed['model'], strict=False)
+    fixed_model.eval()
+    pg0_fixed, pg1_fixed, pg2_fixed = [], [], []  # optimizer parameter groups
+    
+    for k, v in dict(fixed_model.named_parameters()).items():
+        if '.bias' in k:
+            pg2_fixed += [v]  # biases
+        elif 'Conv2d.weight' in k:
+            pg1_fixed += [v]  # apply weight_decay
+        else:
+            pg0_fixed += [v]  # all else
+    #freezing the gradients of fixed model
+    for a, n in fixed_model.named_parameters():
+        n.requires_grad = False
+            
+
     # Initialize model
     model = Darknet(cfg).to(device)
 
@@ -118,7 +138,8 @@ def train(hyp):
     del pg0, pg1, pg2
 
     start_epoch = 0
-    best_fitness = 0.0
+    best_fitness_rtsd = 0.0
+    best_fitness_lisa = 0.0
     attempt_download(weights)
     if weights.endswith('.pt'):  # pytorch format
         # possible weights are '*.pt', 'yolov3-spp.pt', 'yolov3-tiny.pt' etc.
@@ -136,7 +157,7 @@ def train(hyp):
         # load optimizer
         if ckpt['optimizer'] is not None:
             optimizer.load_state_dict(ckpt['optimizer'])
-            best_fitness = 0 #ckpt['best_fitness']
+            best_fitness_rtsd = 0 #ckpt['best_fitness']
 
         # load results
         if ckpt.get('training_results') is not None:
@@ -298,6 +319,20 @@ def train(hyp):
             # Forward
             pred = model(imgs)
 
+            #weights loss
+            output_layer_indices = [idx - 1 for idx, module in enumerate(model.module_list) if isinstance(module, YOLOLayer)]
+            freeze_layer_indices = [x for x in range(len(model.module_list)) if
+                                (x not in output_layer_indices) and
+                                (x - 1 not in output_layer_indices)]
+            layers_to_trained = [85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104]
+            model_weights_loss = 0
+            for idx in layers_to_trained:
+                for parameter1, parameter2 in zip(model.module_list[idx].parameters(), fixed_model.module_list[idx].parameters()):
+                    param_loss = parameter1 - parameter2
+                    param_loss = torch.abs(param_loss)
+                    model_weights_loss = model_weights_loss + param_loss.mean()
+
+
             # Loss
             loss, loss_items = compute_loss(pred, targets, model)
             if not torch.isfinite(loss):
@@ -306,6 +341,8 @@ def train(hyp):
 
             # Backward
             loss *= batch_size / 64  # scale loss
+            # import pdb; pdb.set_trace()
+            loss = loss + 1.3*model_weights_loss
             if mixed_precision:
                 with amp.scale_loss(loss, optimizer) as scaled_loss:
                     scaled_loss.backward()
@@ -387,16 +424,20 @@ def train(hyp):
                 tb_writer.add_scalar(tag, x, epoch)
 
         # Update best mAP
-        fi = fitness(np.array(results_rtsd).reshape(1, -1))  # fitness_i = weighted combination of [P, R, mAP, F1]
-        if fi > best_fitness:
-            best_fitness = fi
+        fi_rtsd = fitness(np.array(results_rtsd).reshape(1, -1))  # fitness_i = weighted combination of [P, R, mAP, F1]
+        if fi_rtsd > best_fitness_rtsd:
+            best_fitness_rtsd = fi_rtsd
+
+        fi_lisa = fitness(np.array(results_lisa).reshape(1, -1))  # fitness_i = weighted combination of [P, R, mAP, F1]
+        if fi_lisa > best_fitness_lisa:
+            best_fitness_lisa = fi_lisa          
 
         # Save model
         save = (not opt.nosave) or (final_epoch and not opt.evolve)
         if save:
             with open(results_file, 'r') as f:  # create checkpoint
                 ckpt = {'epoch': epoch,
-                        'best_fitness': best_fitness,
+                        'best_fitness': best_fitness_rtsd,
                         'training_results': f.read(),
                         'model': ema.ema.module.state_dict() if hasattr(model, 'module') else ema.ema.state_dict(),
                         'optimizer': None if final_epoch else optimizer.state_dict()}
@@ -404,8 +445,10 @@ def train(hyp):
             # Save last, best and delete
             torch.save(ckpt, last)
             # import pdb; pdb.set_trace()
-            if (best_fitness == fi) and not final_epoch:
-                torch.save(ckpt, best)
+            if (best_fitness_rtsd == fi_rtsd) and not final_epoch:
+                torch.save(ckpt, best_rtsd)
+            if (best_fitness_lisa == fi_lisa) and not final_epoch:
+                torch.save(ckpt, best_lisa)                
             del ckpt
 
         # end epoch ----------------------------------------------------------------------------------------------------

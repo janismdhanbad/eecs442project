@@ -86,6 +86,25 @@ def train(hyp):
     # Remove previous results
     for f in glob.glob('*_batch*.jpg') + glob.glob(results_file):
         os.remove(f)
+    
+    #load fixed model
+    fixed_model = Darknet(cfg).to(device)
+    ckpt_freezed = torch.load(weights, map_location=device)
+    fixed_model.load_state_dict(ckpt_freezed['model'], strict=False)
+    pg0_fixed, pg1_fixed, pg2_fixed = [], [], []  # optimizer parameter groups
+    
+    for k, v in dict(fixed_model.named_parameters()).items():
+        if '.bias' in k:
+            pg2_fixed += [v]  # biases
+        elif 'Conv2d.weight' in k:
+            pg1_fixed += [v]  # apply weight_decay
+        else:
+            pg0_fixed += [v]  # all else
+    #freezing the gradients of fixed model
+    for a, n in fixed_model.named_parameters():
+        n.requires_grad = False
+    
+
 
     # Initialize model
     model = Darknet(cfg).to(device)
@@ -278,6 +297,19 @@ def train(hyp):
             # Forward
             pred = model(imgs)
 
+            #weights loss
+            output_layer_indices = [idx - 1 for idx, module in enumerate(model.module_list) if isinstance(module, YOLOLayer)]
+            freeze_layer_indices = [x for x in range(len(model.module_list)) if
+                                (x not in output_layer_indices) and
+                                (x - 1 not in output_layer_indices)]
+            layers_to_trained = [85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104]
+            model_weights_loss = 0
+            for idx in layers_to_trained:
+                for parameter1, parameter2 in zip(model.module_list[idx].parameters(), fixed_model.module_list[idx].parameters()):
+                    param_loss = parameter1 - parameter2
+                    model_weights_loss = model_weights_loss + param_loss.mean()
+
+            
             # Loss
             loss, loss_items = compute_loss(pred, targets, model)
             if not torch.isfinite(loss):
@@ -286,6 +318,7 @@ def train(hyp):
 
             # Backward
             loss *= batch_size / 64  # scale loss
+            loss = loss + model_weights_loss
             if mixed_precision:
                 with amp.scale_loss(loss, optimizer) as scaled_loss:
                     scaled_loss.backward()
@@ -350,6 +383,9 @@ def train(hyp):
         fi = fitness(np.array(results).reshape(1, -1))  # fitness_i = weighted combination of [P, R, mAP, F1]
         if fi > best_fitness:
             best_fitness = fi
+
+
+        
 
         # Save model
         save = (not opt.nosave) or (final_epoch and not opt.evolve)
